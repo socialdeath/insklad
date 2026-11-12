@@ -20,7 +20,8 @@ $client.Timeout = [TimeSpan]::FromSeconds(60)
 $client.DefaultRequestHeaders.Add("User-Agent", $ua)
 
 function Get-Text([string]$url) {
-  $sep = if ($url.Contains("?")) { "&" } else { "?" }
+  $sep = "?"
+  if ($url.Contains("?")) { $sep = "&" }
   $resp = $client.GetAsync($url + $sep + "cb=" + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()).Result
   if (-not $resp.IsSuccessStatusCode) { throw ("HTTP " + [int]$resp.StatusCode + " for " + $url) }
   $bytes = $resp.Content.ReadAsByteArrayAsync().Result
@@ -36,7 +37,8 @@ function Esc([string]$s) {
 function Price([string]$p) {
   if (-not $p) { return "0" }
   $clean = ($p -replace "[^\d.,]", "").Replace(",", "")
-  return if ($clean -eq "") { "0" } else { $clean }
+  if ($clean -eq "") { return "0" }
+  return $clean
 }
 
 function Clean-Desc([string]$s) {
@@ -66,7 +68,9 @@ function Get-ProductJson([string]$html) {
 }
 
 function ConvertTo-CacheEntry($p) {
-  $src = if ($p.characteristics) { @($p.characteristics) } elseif ($p.json_chars) { try { @($p.json_chars | ConvertFrom-Json) } catch { @() } } else { @() }
+  if ($p.characteristics) { $src = @($p.characteristics) }
+  elseif ($p.json_chars) { try { $src = @($p.json_chars | ConvertFrom-Json) } catch { $src = @() } }
+  else { $src = @() }
   $chars = @()
   foreach ($c in $src) { $t = ([string]$c.title).Trim(); if ($t -ne "") { $chars += , @($t, [string]$c.value) } }
   $pics = @(); foreach ($g in @($p.gallery)) { if ($null -ne $g -and [string]$g.img -ne "") { $pics += [string]$g.img } }
@@ -135,7 +139,7 @@ foreach ($r in $rows) {
   }
 
   $avail = ([string]$r.availability -eq "in stock")
-  $availableAttr = if ($avail) { ' available="true"' } else { ' available="false"' }
+  if ($avail) { $availableAttr = ' available="true"' } else { $availableAttr = ' available="false"' }
 
   $desc = ""; $pics = @(); $weight = ""; $chars = @()
   if ($enrich) {
