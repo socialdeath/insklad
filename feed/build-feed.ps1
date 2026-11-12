@@ -29,19 +29,14 @@ function Get-Text([string]$url) {
 
 function Esc([string]$s) {
   if ($null -eq $s) { return "" }
-  $s = $s -replace '&', '&amp;'
-  $s = $s -replace '<', '&lt;'
-  $s = $s -replace '>', '&gt;'
-  $s = $s -replace '"', '&quot;'
-  $s = $s -replace "'", '&apos;'
+  $s = $s -replace '&', '&amp;' -replace '<', '&lt;' -replace '>', '&gt;' -replace '"', '&quot;' -replace "'", '&apos;'
   return $s
 }
 
 function Price([string]$p) {
   if (-not $p) { return "0" }
   $clean = ($p -replace "[^\d.,]", "").Replace(",", "")
-  if ($clean -eq "") { return "0" }
-  return $clean
+  return if ($clean -eq "") { "0" } else { $clean }
 }
 
 function Clean-Desc([string]$s) {
@@ -49,8 +44,7 @@ function Clean-Desc([string]$s) {
   $s = [regex]::Replace($s, '(?i)</?(span|a|u|b|strong|i|em|s|small|big|sub|sup|mark|font)\b[^>]*>', '')
   $s = [regex]::Replace($s, '(?i)^\s*<div[^>]*>', '')
   $s = [regex]::Replace($s, '(?i)</div>\s*$', '')
-  $s = $s.Replace("&nbsp;", " ").Replace("#nbsp;", " ")
-  return $s.Trim()
+  return $s.Replace("&nbsp;", " ").Replace("#nbsp;", " ").Trim()
 }
 
 function Get-ProductJson([string]$html) {
@@ -72,22 +66,13 @@ function Get-ProductJson([string]$html) {
 }
 
 function ConvertTo-CacheEntry($p) {
-  $src = @()
-  if ($p.characteristics) { $src = @($p.characteristics) }
-  elseif ($p.json_chars) { try { $src = @($p.json_chars | ConvertFrom-Json) } catch { $src = @() } }
+  $src = if ($p.characteristics) { @($p.characteristics) } elseif ($p.json_chars) { try { @($p.json_chars | ConvertFrom-Json) } catch { @() } } else { @() }
   $chars = @()
-  foreach ($c in $src) {
-    $t = ([string]$c.title).Trim()
-    if ($t -eq "") { continue }
-    $chars += , @($t, [string]$c.value)
-  }
-  $pics = @()
-  foreach ($g in @($p.gallery)) { if ($null -ne $g -and [string]$g.img -ne "") { $pics += [string]$g.img } }
-  $cat = ""
-  foreach ($u in @($p.partuids)) { if ([string]$u -ne "") { $cat = [string]$u; break } }
-  $desc = Clean-Desc ([string]$p.text)
-  if ($desc -eq "") { $desc = Clean-Desc ([string]$p.descr) }
-  $pm = 0.0; try { $pm = [double]$p.pack_m } catch { $pm = 0.0 }
+  foreach ($c in $src) { $t = ([string]$c.title).Trim(); if ($t -ne "") { $chars += , @($t, [string]$c.value) } }
+  $pics = @(); foreach ($g in @($p.gallery)) { if ($null -ne $g -and [string]$g.img -ne "") { $pics += [string]$g.img } }
+  $cat = ""; foreach ($u in @($p.partuids)) { if ([string]$u -ne "") { $cat = [string]$u; break } }
+  $desc = Clean-Desc ([string]$p.text); if ($desc -eq "") { $desc = Clean-Desc ([string]$p.descr) }
+  $pm = 0.0; try { $pm = [double]$p.pack_m } catch { }
   return @{ cat = $cat; w = $pm; t = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); chars = $chars; pics = $pics; desc = $desc }
 }
 
@@ -102,9 +87,8 @@ if (Test-Path $CachePath) {
         $cache[$prop.Name] = @{ cat = [string]$v.cat; w = [double]$v.w; t = $(try{[long]$v.t}catch{0}); chars = @($v.chars); pics = @($v.pics); desc = [string]$v.desc }
       }
     }
-  } catch { $cache = New-Object System.Collections.Specialized.OrderedDictionary }
+  } catch { }
 }
-$cacheSizeBefore = $cache.Count
 
 Write-Output "== downloading =="
 $yml = Get-Text $YmlUrl
@@ -150,6 +134,10 @@ foreach ($r in $rows) {
     if ($typeName -ne "" -and $catByName.ContainsKey($typeName)) { $catId = $catByName[$typeName] }
   }
 
+  $avail = ([string]$r.availability -eq "in stock")
+  $availableAttr = if ($avail) { ' available="true"' } else { ' available="false"' }
+  $countValue = if ($avail) { "1" } else { "0" }
+
   $desc = ""; $pics = @(); $weight = ""; $chars = @()
   if ($enrich) {
     $desc = [string]$enrich.desc; $pics = @($enrich.pics); $chars = @($enrich.chars)
@@ -159,16 +147,14 @@ foreach ($r in $rows) {
   if ($desc -eq "") { $desc = Clean-Desc ([string]$r.description) }
   if ($pics.Count -eq 0 -and [string]$r.image_link -ne "") { $pics = @([string]$r.image_link) }
 
-  [void]$sb.AppendLine("`t`t<offer id=`"$(Esc $id)`" available=`"false`">")
+  [void]$sb.AppendLine("`t`t<offer id=`"$(Esc $id)`"$availableAttr>")
   [void]$sb.AppendLine("`t`t`t<name>$(Esc ([string]$r.title))</name>")
   if ([string]$r.brand -notmatch "\.") { [void]$sb.AppendLine("`t`t`t<vendor>$(Esc ([string]$r.brand))</vendor>") }
   if ($desc -ne "") { [void]$sb.AppendLine("`t`t`t<description><![CDATA[$($desc.Replace(']]>', ']]]]><![CDATA[>'))]]></description>") }
   foreach ($pic in $pics) { if ([string]$pic -ne "") { [void]$sb.AppendLine("`t`t`t<picture>$(Esc ([string]$pic))</picture>") } }
   if ([string]$r.link -ne "") { [void]$sb.AppendLine("`t`t`t<url>$(Esc ([string]$r.link))</url>") }
   
-  # Явное указание остатка 0 для SearchBooster
-  [void]$sb.AppendLine("`t`t`t<count>0</count>")
-  
+  [void]$sb.AppendLine("`t`t`t<count>$countValue</count>")
   [void]$sb.AppendLine("`t`t`t<price>$(Price ([string]$r.price))</price>")
   [void]$sb.AppendLine("`t`t`t<currencyId>RUR</currencyId>")
   [void]$sb.AppendLine("`t`t`t<categoryId>$catId</categoryId>")
@@ -182,9 +168,8 @@ $out = $yml.Substring(0, $idx) + $sb.ToString() + $yml.Substring($idx)
 $dateStr = [DateTime]::UtcNow.AddHours(3).ToString("yyyy-MM-ddTHH:mm:ss") + "+03:00"
 $out = [regex]::Replace($out, '<yml_catalog date="[^"]*"', '<yml_catalog date="' + $dateStr + '"', 1)
 
-$dir = Split-Path -Parent $OutPath
-if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-[System.IO.File]::WriteAllText($OutPath, $out, (New-Object System.Text.UTF8Encoding($false)))
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($OutPath, $out, $utf8)
 
 # Сохранение кэша
 if ($cache.Count -gt 0) {
@@ -197,6 +182,6 @@ if ($cache.Count -gt 0) {
     $fp = $true; foreach ($p in @($e.pics)) { if (-not $fp) { [void]$jp.Append(",") }; $fp = $false; [void]$jp.Append('"' + $p + '"') }
     [void]$jp.Append('],"desc":"' + (Esc $e.desc) + '"}')
   }
-  [void]$jp.Append("}"); [System.IO.File]::WriteAllText($CachePath, $jp.ToString(), (New-Object System.Text.UTF8Encoding($false)))
+  [void]$jp.Append("}"); [System.IO.File]::WriteAllText($CachePath, $jp.ToString(), $utf8)
 }
 Write-Output "DONE"
