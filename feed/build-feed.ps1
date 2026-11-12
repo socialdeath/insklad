@@ -121,7 +121,7 @@ foreach ($r in $rows) {
   $enrich = $null; $cachedEntry = $null
   if ($cache.Contains($id)) {
     $cachedEntry = $cache[$id]; $ts = 0; try{$ts=[long]$cachedEntry.t}catch{}
-    if ($ts -gt 0 -and ($nowSec - $ts) -lt 2592000) { $enrich = $cachedEntry }
+    if ($ts -gt 0 -and ($nowSec - $ts) -lt 86400) { $enrich = $cachedEntry }
   }
   if (-not $enrich -and $fetches -lt 300 -and [string]$r.link -ne "") {
     $fetches++; try {
