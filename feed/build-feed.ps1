@@ -136,7 +136,6 @@ foreach ($r in $rows) {
 
   $avail = ([string]$r.availability -eq "in stock")
   $availableAttr = if ($avail) { ' available="true"' } else { ' available="false"' }
-  $countValue = if ($avail) { "1" } else { "0" }
 
   $desc = ""; $pics = @(); $weight = ""; $chars = @()
   if ($enrich) {
@@ -154,7 +153,8 @@ foreach ($r in $rows) {
   foreach ($pic in $pics) { if ([string]$pic -ne "") { [void]$sb.AppendLine("`t`t`t<picture>$(Esc ([string]$pic))</picture>") } }
   if ([string]$r.link -ne "") { [void]$sb.AppendLine("`t`t`t<url>$(Esc ([string]$r.link))</url>") }
   
-  [void]$sb.AppendLine("`t`t`t<count>$countValue</count>")
+  # count only for available offers; out-of-stock ones keep available="false" without count
+  if ($avail) { [void]$sb.AppendLine("`t`t`t<count>1</count>") }
   [void]$sb.AppendLine("`t`t`t<price>$(Price ([string]$r.price))</price>")
   [void]$sb.AppendLine("`t`t`t<currencyId>RUR</currencyId>")
   [void]$sb.AppendLine("`t`t`t<categoryId>$catId</categoryId>")
