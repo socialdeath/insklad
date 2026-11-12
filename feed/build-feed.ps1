@@ -172,6 +172,8 @@ $out = $yml.Substring(0, $idx) + $sb.ToString() + $yml.Substring($idx)
 $dateStr = [DateTime]::UtcNow.AddHours(3).ToString("yyyy-MM-ddTHH:mm:ss") + "+03:00"
 $out = [regex]::Replace($out, '<yml_catalog date="[^"]*"', '<yml_catalog date="' + $dateStr + '"', 1)
 
+$dir = Split-Path -Parent $OutPath
+if ($dir -and -not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText($OutPath, $out, $utf8)
 
